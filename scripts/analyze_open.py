@@ -1,6 +1,6 @@
 import pandas as pd
 
-IMPULSE = 35
+IMPULSE = 100
 
 def load_data():
     df = pd.read_csv("data/NQ_5m.csv")
