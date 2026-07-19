@@ -28,7 +28,7 @@ def compute_daily_atr(df):
 
     return daily
 
-IMPULSE = 100
+IMPULSE_PCT_ATR = 0.15
 
 def load_data():
     query = """
@@ -80,9 +80,10 @@ def get_rth_session(df, date):
 
 def first_impulse(rth):
     opening_price = rth.iloc[0]["Open"]
+    impulse = rth.iloc[0]["ATR14"] * IMPULSE_PCT_ATR
 
-    up_target = opening_price + IMPULSE
-    down_target = opening_price - IMPULSE
+    up_target = opening_price + impulse
+    down_target = opening_price - impulse
 
     for index, (_, candle) in enumerate(rth.iterrows()):
         hit_up = candle["High"] >= up_target
@@ -110,35 +111,32 @@ def analyze(df):
             rth.set_index("Datetime").between_time("08:30", "14:55").reset_index()
         )
 
-        print(date, len(rth))
-
         if rth.empty:
             continue
 
-
-        print(rth.iloc[0]["Datetime"])
-        print(rth.iloc[0]["Open"])
-        print(rth["High"].max())
-        print(rth["Low"].min())
+        if pd.isna(rth.iloc[0]["ATR14"]):
+            continue
 
         direction, impulse_index = first_impulse(rth)
-        print(direction, impulse_index)
-        break
+
+        if impulse_index is None:
+            continue
 
         opening_price = rth.iloc[0]["Open"]
+        impulse = rth.iloc[0]["ATR14"] * IMPULSE_PCT_ATR
 
         impulse_mfe = None
         impulse_mae = None
 
         if direction == "Up":
-            reference = opening_price + IMPULSE
+            reference = opening_price + impulse
             post_impulse = rth.iloc[impulse_index:]
 
             impulse_mfe = post_impulse["High"].max() - reference
             impulse_mae = reference - post_impulse["Low"].min()
 
         elif direction == "Down":
-            reference = opening_price - IMPULSE
+            reference = opening_price - impulse
             post_impulse = rth.iloc[impulse_index:]
 
             impulse_mfe = reference - post_impulse["Low"].min()
@@ -146,7 +144,7 @@ def analyze(df):
 
         results.append({
             "Date": date,
-            f"First{IMPULSE}": direction,
+            "FirstImpulse": direction,
             "ImpulseMFE": impulse_mfe,
             "ImpulseMAE": impulse_mae
         })
@@ -155,10 +153,18 @@ def analyze(df):
 
 def main():
     df = load_data()
-    results = analyze(df)
     daily = compute_daily_atr(df)
 
-    results.to_csv(f"output/open_firstImpulse{IMPULSE}.csv", index=False)
+    df = df.merge(
+        daily[["ATR14"]],
+        left_on="SessionDate",
+        right_index=True,
+        how="left"
+    )
+
+    results = analyze(df)
+
+    results.to_csv(f"output/open_firstImpulse{IMPULSE_PCT_ATR}.csv", index=False)
 
     print(results.head())
     print(f"\nAnalyzed {len(results)} sessions.")
