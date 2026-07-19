@@ -1,13 +1,71 @@
 import pandas as pd
+import psycopg
+
+def compute_daily_atr(df):
+    daily = (
+        df.groupby("SessionDate").agg(
+            Open=("Open", "first"),
+            High=("High", "max"),
+            Low=("Low", "min"),
+            Close=("Close", "last")
+        )
+    )
+
+    daily["PrevClose"] = daily["Close"].shift(1)
+
+    daily["TR"] = (
+        pd.concat(
+            [
+                daily["High"] - daily["Low"],
+                (daily["High"] - daily["PrevClose"]).abs(),
+                (daily["Low"] - daily["PrevClose"]).abs()
+            ],
+            axis=1,
+        ).max(axis=1)
+    )
+
+    daily["ATR14"] = daily["TR"].rolling(14).mean().shift(1)
+
+    return daily
 
 IMPULSE = 100
 
 def load_data():
-    df = pd.read_csv("data/NQ_5m.csv")
+    query = """
+        SELECT
+            timestamp,
+            open,
+            high,
+            low,
+            close,
+            volume
+        FROM candles
+        ORDER BY timestamp;
+    """
+
+    with psycopg.connect("dbname=dailyedge_development") as connection:
+        df = pd.read_sql(query, connection)
+
+    print(df.columns.tolist())
+
+    df.rename(columns={
+        "timestamp": "Datetime",
+        "open": "Open",
+        "high": "High",
+        "low": "Low",
+        "close": "Close",
+        "volume": "Volume",
+    }, inplace=True)
+
     df["Datetime"] = pd.to_datetime(df["Datetime"])
     df["Date"] = df["Datetime"].dt.date
-    return df
 
+    df["SessionDate"] = (
+        df["Datetime"] + pd.to_timedelta((df["Datetime"].dt.hour >= 17).astype(int), unit="D",)
+    ).dt.date
+
+
+    return df
 
 def get_rth_session(df, date):
     session = df[df["Date"] == date]
@@ -43,16 +101,29 @@ def first_impulse(rth):
 
 
 def analyze(df):
-    opening_candles = df[
-        df["Datetime"].dt.time == pd.Timestamp("09:30").time()
-    ]
-
     results = []
 
-    for date in opening_candles["Date"]:
-        rth = get_rth_session(df, date)
+    sessions = df.groupby("Date")
+
+    for date, rth in sessions:
+        rth = (
+            rth.set_index("Datetime").between_time("08:30", "14:55").reset_index()
+        )
+
+        print(date, len(rth))
+
+        if rth.empty:
+            continue
+
+
+        print(rth.iloc[0]["Datetime"])
+        print(rth.iloc[0]["Open"])
+        print(rth["High"].max())
+        print(rth["Low"].min())
 
         direction, impulse_index = first_impulse(rth)
+        print(direction, impulse_index)
+        break
 
         opening_price = rth.iloc[0]["Open"]
 
@@ -84,13 +155,14 @@ def analyze(df):
 
 def main():
     df = load_data()
-
     results = analyze(df)
+    daily = compute_daily_atr(df)
 
     results.to_csv(f"output/open_firstImpulse{IMPULSE}.csv", index=False)
 
     print(results.head())
     print(f"\nAnalyzed {len(results)} sessions.")
+    print(daily[["High", "Low", "Close", "PrevClose", "ATR14"]].head(20))
 
 
 if __name__ == "__main__":

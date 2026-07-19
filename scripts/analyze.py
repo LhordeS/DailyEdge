@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pandas as pd
+import psycopg
 
 DATA_FILE = Path("data/NQ.csv")
 OUTPUT_FILE = Path("output/daily_stats.csv")
@@ -21,7 +22,34 @@ def counter_move(row):
         return row["High"] - row["Open"]
 
 def main():
-    df = pd.read_csv(DATA_FILE)
+    connection = psycopg.connect("dbname=dailyedge_development")
+
+    query = """
+WITH daily AS (
+    SELECT
+        DATE(timestamp) AS day,
+        MIN(timestamp) AS first_ts,
+        MAX(timestamp) AS last_ts,
+        MAX(high) AS high,
+        MIN(low) AS low
+    FROM candles
+    GROUP BY DATE(timestamp)
+)
+SELECT
+    d.day AS "Date",
+    o.open AS "Open",
+    d.high AS "High",
+    d.low AS "Low",
+    c.close AS "Close"
+FROM daily d
+JOIN candles o
+    ON o.timestamp = d.first_ts
+JOIN candles c
+    ON c.timestamp = d.last_ts
+ORDER BY d.day;
+"""
+
+    df = pd.read_sql(query, connection)
 
     df["Direction"] = df.apply(direction, axis=1)
     df["Extension"] = df.apply(extension, axis=1)
