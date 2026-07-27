@@ -146,7 +146,7 @@ def analyze(df):
             "Date": date,
             "FirstImpulse": direction,
             "ImpulseMFE": impulse_mfe,
-            "ImpulseMAE": impulse_mae
+            "ImpulseMAE": impulse_mae,
         })
 
     return pd.DataFrame(results)
