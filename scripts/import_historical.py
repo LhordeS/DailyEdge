@@ -24,7 +24,7 @@ with psycopg.connect("dbname=dailyedge_development") as connection:
             "Close",
             "Volume",
         ],
-        skiprows=5_800_000,
+        # skiprows=5_800_000,
         chunksize=100_000,
     ):
         chunk["Timestamp"] = pd.to_datetime(
